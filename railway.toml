@@ -1,0 +1,11 @@
+# Railway: set Service → Root Directory to this folder (guthrie) when the repo is a monorepo.
+# https://docs.railway.com/guides/build-configuration
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Optional: set healthcheckPath in the Railway UI if a stable GET route is confirmed (e.g. /api/agents).
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

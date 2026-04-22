@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.env*.local
+*.env
+.eliza/
+.bun/
+bun.lockb
+*.log
+.DS_Store
+data/
+*.db
+*.sqlite

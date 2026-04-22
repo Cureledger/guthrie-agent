@@ -1,0 +1,59 @@
+{
+  "name": "guthrie",
+  "description": "Guthrie — Patient-sovereign rare disease data agent, powered by ElizaOS",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "module": "dist/src/index.js",
+  "types": "dist/index.d.ts",
+  "keywords": [
+    "elizaos",
+    "rare-disease",
+    "patient-data",
+    "guthrie",
+    "cureledger"
+  ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/src/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@elizaos/cli": "1.6.4",
+    "@elizaos/client": "1.6.4",
+    "@elizaos/core": "1.6.4",
+    "@elizaos/plugin-bootstrap": "1.6.4",
+    "@elizaos/plugin-ollama": "^1.2.4",
+    "@elizaos/plugin-openai": "^1.5.18",
+    "@elizaos/plugin-sql": "1.6.4",
+    "@elizaos/server": "1.6.4",
+    "zod": "4.1.11"
+  },
+  "devDependencies": {
+    "prettier": "3.5.3",
+    "typescript": "^5.6.3"
+  },
+  "scripts": {
+    "start": "elizaos start",
+    "dev": "elizaos dev",
+    "build": "bun run build.ts",
+    "lint": "prettier --write ./src",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write ./src",
+    "format:check": "prettier --check ./src"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
