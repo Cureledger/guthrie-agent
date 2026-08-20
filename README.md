@@ -1,5 +1,7 @@
 # Guthrie
 
+DEPRECATED in favour of Cureledger/Cureledger2026 repo
+
 **Patient-sovereign rare disease data agent**, powered by [ElizaOS](https://elizaos.ai).
 
 Named after [Robert Guthrie](https://en.wikipedia.org/wiki/Robert_Guthrie) (1916–1995), the microbiologist who invented the newborn screening heel-prick test in 1963 — the technical accident of history that gave PKU patients a chance.
