@@ -1,11 +1,27 @@
-# Railway: set Service → Root Directory to this folder (guthrie) when the repo is a monorepo.
-# https://docs.railway.com/guides/build-configuration
+# Railway service config for the Guthrie PKU research agent (FastAPI).
+#
+# In Railway, leave the service Root Directory empty: this file, the Dockerfile
+# path, and the Docker build context are all resolved from the repo root.
+#
+# Required variables (Railway service Variables):
+#   ANTHROPIC_API_KEY   — funded key on a workspace with model access (runtime)
+#   INDEX_READ_TOKEN    — may only read this repo's contents; the build uses
+#                         it to download the index (see DEPLOY.md)
+# Optional:
+#   GUTHRIE_ANSWER_MODEL      (default claude-haiku-4-5-20251001)
+#   GUTHRIE_CORS_ORIGINS      (default already includes pku-commons.org and phebe.life)
+#   GUTHRIE_API_TOKEN         (set to require Bearer auth on /api/*)
+#   GUTHRIE_RATE_LIMIT_PER_MIN(default 20)
 
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "serve/Dockerfile"
 
 [deploy]
-# Optional: set healthcheckPath in the Railway UI if a stable GET route is confirmed (e.g. /api/agents).
+# No startCommand: Railway runs it without a shell, so `${PORT:-8000}` would be
+# passed to uvicorn as a literal string. Instead the image CMD (shell form in
+# serve/Dockerfile) binds uvicorn to Railway's $PORT.
+healthcheckPath = "/health"
+healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

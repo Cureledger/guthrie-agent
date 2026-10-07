@@ -1,8 +1,0 @@
-Guthrie src snapshot (created before JSON/agent asset edits).
-
-Contents: folder src-snapshot-2026-04-20/ is a copy of ../src/ (all .ts files that were present).
-
-Restore from repo root:
-  rm -rf guthrie/src && cp -R guthrie/backups/src-snapshot-2026-04-20 guthrie/src
-
-Note: guthrie/data/ does not exist in this repo yet; nothing was backed up there.
