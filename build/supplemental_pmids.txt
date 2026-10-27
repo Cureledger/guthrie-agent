@@ -1,0 +1,3 @@
+# Explicit inclusions outside the frozen universe query (see CORPUS.md, "Supplemental inclusions").
+# One PMID per line. Each entry needs a reviewer of record and a reason in CORPUS.md.
+42561449  # Khan et al. 2026, Biochem Cell Biol — comprehensive PAH pathway map (Guelph carrier series); never uses the word phenylketonuria

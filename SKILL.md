@@ -7,9 +7,16 @@ description: >-
   dietary/phe management, sapropterin (BH4/Kuvan), pegvaliase (Palynziq), large
   neutral amino acids, maternal PKU, blood-phe monitoring, neurocognitive
   outcomes, gene/enzyme therapy, treatment guidelines, and the PKU Commons
-  phe-estimator benchmark, leaderboard, food list, and peer-review model.
+  phe-estimator benchmark, leaderboard, food list, and peer-review model. Also
+  covers the sister pterin (BH4) and monoamine-synthesis disorders (PTPS, DHPR,
+  GTPCH and sepiapterin reductase deficiency, dopa-responsive dystonia, DNAJC12,
+  AADC and tyrosine hydroxylase deficiency), their precursor therapy (5-HTP,
+  L-DOPA, BH4) and monoamine biomarkers (CSF HVA/5-HIAA, prolactin, pterins),
+  labelled by disease so cross-disease inference is explicit.
   Triggers on phenylketonuria, PKU, hyperphenylalaninemia, phenylalanine, phe
-  levels/diet, PAH deficiency, and "which phe estimator app is accurate".
+  levels/diet, PAH deficiency, PKU carriers, tetrahydrobiopterin or BH4
+  deficiency, dopa-responsive dystonia, 5-hydroxytryptophan, and "which phe
+  estimator app is accurate".
   Guthrie cites or refuses; it does not give medical advice, diagnosis, or
   dosing for an individual.
 ---
@@ -24,10 +31,12 @@ and the Commons' own infrastructure.
 
 He answers from two indexed layers (see [CORPUS.md](CORPUS.md)):
 
-- **The literature** — ~3,700 PubMed records across the PKU domains, cited as
-  `[PMID:xxxxxxxx]`, plus a small set of open-access guideline full texts.
-- **The market** — the PKU Commons benchmark, leaderboard, peer-review model,
-  and the Phebe app/scale specs, cited as `[Commons:<doc>]`.
+- **The literature** — the whole PKU PubMed universe (~9.7k records), full text wherever open access, plus the Layer 1b pterin slice, cited as
+  `[PMID:xxxxxxxx]`, plus a small set of open-access guideline full texts, and
+  (Layer 1b, v0.2) ~1,900 records on the pterin/BH4 and monoamine-synthesis
+  disorders, tagged `pterin` so Guthrie names the disease when he cites them.
+- **The market** — the PKU Commons benchmark, leaderboard, peer-review model
+  and pain points, cited as `[Commons:<doc>]`.
 
 ## The contract (what makes Guthrie trustworthy)
 
@@ -78,6 +87,9 @@ for h in pku_search("maternal PKU pregnancy phe target", k=5):
 pku_search("phe estimator accuracy", k=5, source="commons")
 
 guthrie_index_info()     # {model, n_chunks, by_source, built_utc, ...}
+
+# Pull one paper into the session (full text if open access, else abstract)
+pku_paper("PMID:42821260")           # also accepts "PMC13631764" or a DOI
 ```
 
 `pku_ask` returns a dict: `answer` (str, or `None` if no LLM is available),
@@ -92,11 +104,12 @@ records), so it rebuilds from source in minutes with no API key:
 
 ```bash
 python build/fetch_corpus.py            # PubMed abstracts + metadata
+python build/fetch_fulltext.py          # Europe PMC full text, every open-access paper
 python build/fetch_guidelines_fulltext.py  # PMC OA guideline full text
-python build/build_market_layer.py      # PKU Commons + Phebe docs
+python build/build_market_layer.py      # public PKU Commons docs
 python build/build_index.py             # BM25 + MiniLM hybrid index
 # incremental refresh (keeps the corpus live without a maintainer):
-python build/fetch_corpus.py --since 2026/01/01 && python build/build_index.py
+python build/fetch_corpus.py && python build/fetch_fulltext.py && python build/build_index.py
 ```
 
 Guthrie's accuracy is itself peer-reviewed: see `eval/` for the retrieval eval

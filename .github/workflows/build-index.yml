@@ -1,9 +1,9 @@
 name: Build PKU index
 
-# Rebuilds the Guthrie research index from public sources (PubMed E-utilities —
-# NO API key required) and publishes it as the `index-latest` GitHub Release
-# asset. The agent's Docker image (Dockerfile) downloads that asset at
-# build time, so the ~40MB binaries never live in git.
+# Rebuilds the Guthrie research index from public sources (PubMed E-utilities
+# and Europe PMC — NO API key required) and publishes it as the `index-latest`
+# GitHub Release asset. The agent's Docker image (Dockerfile) downloads that asset at
+# build time, so the index binaries (about 270 MB) never live in git.
 #
 # Run this ONCE (Run workflow) before the first Railway deploy, then it refreshes
 # weekly and whenever the build scripts change.
@@ -32,6 +32,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The first run after full text arrived checks ~8,000 papers on Europe PMC;
+    # later runs only look at papers they have not checked.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,17 +71,30 @@ jobs:
           # Pull the corpus we've grown so far so this run ADDS to it. First run
           # (no release / no asset yet) just starts fresh.
           gh release download index-latest --dir build/raw \
-            --pattern 'literature.jsonl.gz' --pattern 'fetched_ids.txt' --clobber \
+            --pattern 'literature.jsonl.gz' --pattern 'fetched_ids.txt' \
+            --pattern 'literature_pterin.jsonl.gz' --pattern 'fetched_ids_pterin.txt' \
+            --pattern 'fulltext.jsonl.gz' --pattern 'fulltext_ids.txt' \
+            --pattern 'fulltext_failed.txt' --clobber \
             || echo "no prior corpus — starting fresh"
-          [ -f build/raw/literature.jsonl.gz ] && gunzip -f build/raw/literature.jsonl.gz || true
-          echo "restored $(wc -l < build/raw/literature.jsonl 2>/dev/null || echo 0) records, $(wc -l < build/raw/fetched_ids.txt 2>/dev/null || echo 0) attempted ids"
+          for f in build/raw/*.jsonl.gz; do if [ -f "$f" ]; then gunzip -f "$f"; fi; done
+          echo "restored $(wc -l < build/raw/literature.jsonl 2>/dev/null || echo 0) PKU records, $(wc -l < build/raw/literature_pterin.jsonl 2>/dev/null || echo 0) pterin records, $(wc -l < build/raw/fulltext.jsonl 2>/dev/null || echo 0) full texts"
 
       - name: Fetch corpus (PubMed, key-free)
         env:
           NCBI_CONTACT_EMAIL: ${{ vars.NCBI_CONTACT_EMAIL }}
           # Dispatch input goes through env, never into the script text.
           MAX_RECORDS: ${{ github.event.inputs.max_records || '4000' }}
-        run: python build/fetch_corpus.py --max "$MAX_RECORDS"
+        run: |
+          python build/fetch_corpus.py --max "$MAX_RECORDS"
+          # Layer 1b: the pterin (BH4) and monoamine-synthesis disorders
+          python build/fetch_corpus.py --slice pterin --max "$MAX_RECORDS"
+          # papers reviewed in that the universe queries do not match (CORPUS.md)
+          python build/fetch_corpus.py --pmids build/supplemental_pmids.txt
+
+      - name: Fetch open-access full text (Europe PMC, key-free)
+        # Checkpoints after every 100 papers and resumes next run, so a failure
+        # here still builds the index with the full text already held.
+        run: python build/fetch_fulltext.py || echo "full-text fetch stopped early; building with what is held"
 
       - name: Fetch guideline full text (best-effort)
         run: python build/fetch_guidelines_fulltext.py || echo "guidelines fetch skipped/failed; continuing with the literature corpus"
@@ -99,9 +115,12 @@ jobs:
         run: |
           test -f pku_index/chunks.sqlite
           tar czf pku_index.tar.gz pku_index
-          # keep the grown corpus + attempted-id log so the next run resumes it
-          gzip -kf build/raw/literature.jsonl
-          ls -la pku_index.tar.gz build/raw/literature.jsonl.gz build/raw/fetched_ids.txt
+          # keep the grown corpus + attempted-id logs so the next run resumes it
+          for f in literature literature_pterin fulltext; do
+            if [ -f "build/raw/$f.jsonl" ]; then gzip -kf "build/raw/$f.jsonl"; fi
+          done
+          touch build/raw/fetched_ids_pterin.txt build/raw/fulltext_ids.txt build/raw/fulltext_failed.txt
+          ls -la pku_index.tar.gz build/raw/*.jsonl.gz build/raw/*.txt
           echo "---- meta.json ----"
           cat pku_index/meta.json
 
@@ -109,15 +128,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          IDX="pku_index.tar.gz"
-          CORPUS="build/raw/literature.jsonl.gz"
-          IDS="build/raw/fetched_ids.txt"
-          NOTES="PKU retrieval index + accumulated corpus, rebuilt $(date -u +%Y-%m-%dT%H:%M:%SZ) from PubMed + guidelines. Docker pulls pku_index.tar.gz; the Build-PKU-index Action reuses literature.jsonl.gz + fetched_ids.txt to grow the corpus each run."
+          ASSETS="pku_index.tar.gz $(ls build/raw/*.jsonl.gz) build/raw/fetched_ids.txt build/raw/fetched_ids_pterin.txt build/raw/fulltext_ids.txt build/raw/fulltext_failed.txt"
+          NOTES="PKU retrieval index + accumulated corpus, rebuilt $(date -u +%Y-%m-%dT%H:%M:%SZ) from PubMed, Europe PMC full text and guidelines. Docker pulls pku_index.tar.gz; the Build-PKU-index Action reuses the corpus files and id logs to grow the corpus each run."
           if gh release view index-latest >/dev/null 2>&1; then
-            gh release upload index-latest "$IDX" "$CORPUS" "$IDS" --clobber
+            gh release upload index-latest $ASSETS --clobber
             gh release edit index-latest --notes "$NOTES"
           else
-            gh release create index-latest "$IDX" "$CORPUS" "$IDS" \
+            gh release create index-latest $ASSETS \
               --title "PKU index (latest)" \
               --notes "$NOTES" \
               --prerelease

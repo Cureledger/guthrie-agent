@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY kernel.py ./kernel.py
 COPY serve/serve.py ./serve.py
+# pku_paper() reads one paper's full text live with the corpus fetchers.
+COPY build/fetch_corpus.py build/fetch_fulltext.py ./build/
 
 # The ~40MB retrieval index (chunks.sqlite + embeddings.npy + bm25.pkl) is NOT
 # in git. It is rebuilt from public sources by .github/workflows/build-index.yml
