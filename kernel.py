@@ -4,6 +4,8 @@ Loaded automatically when the `guthrie` skill is loaded. Exposes:
 
     pku_search(query, k=8, source=None)  -> list[dict]  ranked chunks + citations
     pku_ask(question, k=8, mode="brief") -> dict         grounded, cited answer
+    pku_paper(ref)                       -> dict          one paper, full text if open
+    pku_concerns()                       -> list[dict]    the literature slices, with paper counts
     guthrie_index_info()                 -> dict          index build metadata
 
 Design contract (see CORPUS.md):
@@ -12,6 +14,10 @@ Design contract (see CORPUS.md):
     inventing a citation.
   * NO medical advice / diagnosis / dosing for an individual. Guthrie reports
     what the literature says and routes care decisions to a clinician.
+  * Literature passages carry a slice tag: Layer 1 (PKU) or Layer 1b (the
+    pterin/BH4 and monoamine-synthesis disorders). Pterin passages are labelled
+    (literature/pterin, ...) in context and the system prompt requires Guthrie to
+    name the disease and never pass a pterin finding off as a PKU finding.
   * The index is local: BM25 + MiniLM dense, score-fused. It is located via
     $GUTHRIE_INDEX_DIR, else the `pku_index/` folder beside this file. If it is
     missing, run guthrie/build/{fetch_corpus,build_market_layer,build_index}.py
@@ -74,7 +80,12 @@ GUTHRIE_SYSTEM = (
     "(3) You do not give medical advice, diagnosis, or dosing for an individual; "
     "you explain what the literature reports and defer care decisions to a "
     "clinician. "
-    "(4) Be concise and direct. No em-dashes.")
+    "(4) Passages labelled (literature/pterin, ...) come from the sister "
+    "tetrahydrobiopterin (BH4) and monoamine-synthesis disorders, not from PKU. "
+    "You may use them to explain shared mechanism, biomarkers, and how those "
+    "disorders are treated, but you must say which disease the passage is about "
+    "and never present a pterin-disorder finding as a PKU finding. "
+    "(5) Be concise and direct. No em-dashes.")
 
 
 def guthrie_state():
@@ -123,10 +134,20 @@ def normalize_query(query):
 
 
 def load_index():
-    """Load the SQLite chunks, embeddings, BM25 corpus, and embed model once."""
+    """Load the SQLite chunks, embeddings, BM25 corpus, and embed model once.
+    Serialized: concurrent first requests must not each append to the state."""
     st = guthrie_state()
     if st.get("loaded"):
         return st
+    import threading
+    lock = st.setdefault("lock", threading.Lock())
+    with lock:
+        if st.get("loaded"):
+            return st
+        return _load_index_locked(st)
+
+
+def _load_index_locked(st):
     os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     os.environ.setdefault("HF_XET_DISABLE", "1")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -144,6 +165,15 @@ def load_index():
         "SELECT rowid, source, citation_id, cite_label, title, text, year, "
         "journal, url, extra FROM chunks ORDER BY rowid")]
     con.close()
+    for r in rows:  # literature slice tag ("pku" | "pterin" | "pku,pterin"), see CORPUS.md Layer 1b
+        try:
+            extra = json.loads(r.get("extra") or "{}")
+        except Exception:
+            extra = {}
+        r["slice"] = extra.get("slice") or ""
+        # A full-text chunk is titled "<paper> — <section> (n/m)"; callers that
+        # list sources want the paper's own title.
+        r["paper_title"] = extra.get("paper_title") or r["title"]
     emb = np.load(os.path.join(idx, "embeddings.npy"))
     with open(os.path.join(idx, "bm25.pkl"), "rb") as f:
         tokenized = pickle.load(f)["tokenized"]
@@ -163,11 +193,22 @@ def minmax(x):
     return (x - lo) / (hi - lo) if hi > lo else np.zeros_like(x)
 
 
-def pku_search(query, k=8, source=None, alpha=0.5):
+def _slice_ok(row_slice, wanted):
+    """A row passes when any of its slice tags is wanted. Rows with no tag
+    (guidelines, commons) always pass."""
+    if not wanted or not row_slice:
+        return True
+    return any(t in wanted for t in row_slice.split(","))
+
+
+def pku_search(query, k=8, source=None, alpha=0.5, slices=None):
     """Hybrid retrieval. Returns k chunks ranked by fused BM25 + dense score.
 
     alpha  = dense weight (0 = pure lexical, 1 = pure semantic).
-    source = optional filter: 'literature' | 'guideline_fulltext' | 'commons'.
+    source = optional filter: 'literature' | 'fulltext' | 'guideline_fulltext' | 'commons'.
+    slices = optional list of concern tags ('pku', 'pterin', ...): only passages
+             from those concerns are returned (untagged guideline/commons rows
+             always pass). This is the per-member concern filter.
     Each result carries its citation label + url so the caller can cite it.
     The raw dense cosine is kept per hit (used as the absolute relevance gate).
     """
@@ -184,9 +225,13 @@ def pku_search(query, k=8, source=None, alpha=0.5):
         r = rows[int(i)]
         if source and r["source"] != source:
             continue
+        if not _slice_ok(r.get("slice") or "", slices):
+            continue
         out.append({
             "rank": len(out) + 1, "citation": r["cite_label"], "source": r["source"],
-            "title": r["title"], "year": r["year"], "journal": r["journal"],
+            "slice": r.get("slice") or "",
+            "title": r["title"], "paper_title": r.get("paper_title") or r["title"],
+            "year": r["year"], "journal": r["journal"],
             "url": r["url"], "text": r["text"],
             "score": round(float(fused[int(i)]), 4),
             "dense": round(float(dense[int(i)]), 4),
@@ -199,7 +244,10 @@ def pku_search(query, k=8, source=None, alpha=0.5):
 def format_context(hits):
     blocks = []
     for h in hits:
-        head = f"[{h['citation']}] ({h['source']}, {h['year']}) {h['title']}".strip()
+        src = h["source"]
+        if h.get("slice") and h["slice"] != "pku":
+            src = f"{src}/{h['slice']}"
+        head = f"[{h['citation']}] ({src}, {h['year']}) {h['title']}".strip()
         blocks.append(f"{head}\n{h['text'][:1400]}")
     return "\n\n---\n\n".join(blocks)
 
@@ -216,8 +264,11 @@ def get_host():
     return None
 
 
-def pku_ask(question, k=8, mode="brief", min_relevance=DEFAULT_MIN_RELEVANCE, llm=None):
+def pku_ask(question, k=8, mode="brief", min_relevance=DEFAULT_MIN_RELEVANCE, llm=None,
+            slices=None):
     """Grounded, cited answer. mode: 'brief' | 'full'.
+
+    slices = optional literature slices to answer from (see pku_search).
 
     Returns {answer, citations, hits, refused, medical_flag}. Refuses (no
     fabricated citation) when retrieval is weak.
@@ -237,7 +288,7 @@ def pku_ask(question, k=8, mode="brief", min_relevance=DEFAULT_MIN_RELEVANCE, ll
         if host is not None:
             llm = lambda prompt, system, max_tokens: host.llm(
                 prompt, system=system, max_tokens=max_tokens)
-    hits = pku_search(question, k=k)
+    hits = pku_search(question, k=k, slices=slices)
     top = hits[0]["dense"] if hits else -1.0
     medical = bool(re.search(MEDICAL_PATTERN, question, re.I))
 
@@ -267,6 +318,91 @@ def pku_ask(question, k=8, mode="brief", min_relevance=DEFAULT_MIN_RELEVANCE, ll
     cited = sorted(set(re.findall(r"\[(?:PMID:\d+|Commons:[a-z0-9\-]+)\]", text)))
     return {"answer": text, "citations": cited, "hits": hits,
             "refused": False, "medical_flag": medical}
+
+
+EPMC_REST = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+
+# Human labels for the concern tags in the index (CORPUS.md layers). A tag
+# with no label here is shown by its raw key.
+CONCERN_LABELS = {
+    "pku": "PKU",
+    "pterin": "BH4 and monoamine disorders",
+}
+
+
+def pku_concerns():
+    """The concerns (index slices) a member can pick, with paper counts."""
+    meta = load_index()["meta"]
+    by_slice = meta.get("literature_by_slice") or {}
+    counts = {}
+    for tag, n in by_slice.items():
+        for t in tag.split(","):
+            counts[t] = counts.get(t, 0) + n
+    return [{"key": t, "label": CONCERN_LABELS.get(t, t), "papers": n}
+            for t, n in sorted(counts.items(), key=lambda x: -x[1])]
+
+
+def pku_paper(ref, max_chars=0):
+    """Pull ONE paper into the session for discussion: full text when it is open
+    access, otherwise the abstract. `ref` is a PMID ("12345678" or "PMID:12345678"),
+    a PMC id ("PMC1234567"), or a DOI. Live call to Europe PMC; no key.
+
+    Returns {pmid, pmcid, doi, title, year, journal, abstract, sections,
+             full_text (bool), url, citation}. `sections` is [{heading, text}]
+    (tables included, flattened). max_chars > 0 truncates the body for very
+    long papers. Raises nothing on a miss: full_text is False and sections [].
+    """
+    import json, urllib.parse, urllib.request
+    ref = str(ref).strip()
+    low = ref.lower()
+    if low.startswith("pmid:"):
+        ref = ref[5:].strip()
+    if low.startswith("pmc"):
+        q = f"PMCID:{ref.upper()}"
+    elif ref.isdigit():
+        q = f"EXT_ID:{ref} AND SRC:MED"
+    else:
+        q = f'DOI:"{ref}"'
+    url = f"{EPMC_REST}/search?" + urllib.parse.urlencode(
+        {"query": q, "format": "json", "pageSize": 1, "resultType": "core"})
+    with urllib.request.urlopen(url, timeout=60) as r:
+        hits = json.load(r).get("resultList", {}).get("result", [])
+    if not hits:
+        return {"pmid": None, "pmcid": None, "doi": None, "title": None, "year": None,
+                "journal": None, "abstract": None, "sections": [], "full_text": False,
+                "url": None, "citation": None, "note": f"no Europe PMC record for {ref}"}
+    h = hits[0]
+    import html
+    def _clean(t):  # Europe PMC 'core' fields carry escaped HTML (<i>, <h4>)
+        return re.sub(r"<[^>]+>", "", html.unescape(t)).strip() if t else t
+    pmid, pmcid = h.get("pmid"), h.get("pmcid")
+    out = {"pmid": pmid, "pmcid": pmcid, "doi": h.get("doi"), "title": _clean(h.get("title")),
+           "year": h.get("pubYear"), "journal": h.get("journalTitle"),
+           "abstract": _clean(h.get("abstractText")), "sections": [], "full_text": False,
+           "url": (f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/" if pmid
+                   else f"https://europepmc.org/article/PMC/{pmcid}"),
+           "citation": f"PMID:{pmid}" if pmid else f"PMC:{pmcid}"}
+    if h.get("inEPMC") == "Y" and pmcid:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "build"))
+        try:
+            from fetch_fulltext import fetch_fulltext
+            doc = fetch_fulltext(pmcid)
+        except Exception as e:  # 500s happen for a few PMC ids; abstract still returned
+            out["note"] = f"full text fetch failed: {e}"
+            doc = None
+        if doc and doc["sections"]:
+            secs = doc["sections"]
+            if max_chars and max_chars > 0:
+                kept, used = [], 0
+                for sec in secs:
+                    if used >= max_chars:
+                        break
+                    t = sec["text"][:max_chars - used]
+                    kept.append({"heading": sec["heading"], "text": t}); used += len(t)
+                secs = kept
+            out["sections"], out["full_text"] = secs, True
+    return out
 
 
 def guthrie_index_info():

@@ -35,11 +35,21 @@ _word = re.compile(r"[a-z0-9]+")
 def tokenize(text):
     return _word.findall(text.lower())
 
-def literature_chunks(path):
-    """One chunk per abstract (abstracts are already ~paragraph sized)."""
+def literature_chunks(path, slice_name="pku", both=frozenset()):
+    """One chunk per abstract (abstracts are already ~paragraph sized).
+
+    slice_name tags which frozen universe the record came from ("pku" = Layer 1,
+    "pterin" = Layer 1b). A PKU record whose PMID is also matched by the pterin
+    query is tagged "pku,pterin" so the kernel can label cross-disease passages.
+    """
+    if not os.path.exists(path):
+        return
     for line in open(path, encoding="utf-8"):
         r = json.loads(line)
         text = f"{r['title']}\n\n{r['abstract']}"
+        sl = slice_name
+        if slice_name == "pku" and r["pmid"] in both:
+            sl = "pku,pterin"
         yield {
             "source": "literature",
             "citation_id": f"PMID:{r['pmid']}",
@@ -50,7 +60,8 @@ def literature_chunks(path):
             "journal": r.get("journal") or "",
             "url": f"https://pubmed.ncbi.nlm.nih.gov/{r['pmid']}/",
             "extra": json.dumps({"doi": r.get("doi"), "pmcid": r.get("pmcid"),
-                                 "pub_types": r.get("pub_types", [])[:4]}),
+                                 "pub_types": r.get("pub_types", [])[:4],
+                                 "slice": sl}),
         }
 
 def guideline_chunks(path):
@@ -76,6 +87,61 @@ def guideline_chunks(path):
                 "extra": json.dumps({"pmcid": r["pmcid"], "heading": head}),
             }
 
+def _split(text, limit=1800):
+    """Split a long section on paragraph, then sentence, boundaries into <= limit pieces."""
+    if len(text) <= limit:
+        return [text]
+    out, buf = [], ""
+    for para in text.split("\n"):
+        if len(para) > limit:  # one giant paragraph: break on sentences
+            for sent in re.split(r"(?<=[.!?])\s+", para):
+                if len(buf) + len(sent) + 1 > limit and buf:
+                    out.append(buf); buf = ""
+                buf = (buf + " " + sent).strip()
+            continue
+        if len(buf) + len(para) + 1 > limit and buf:
+            out.append(buf); buf = ""
+        buf = (buf + "\n" + para).strip()
+    if buf:
+        out.append(buf)
+    return out
+
+def fulltext_chunks(path, slice_of=None):
+    """Section-level chunks from Europe PMC open-access full text (fetch_fulltext.py).
+
+    Each paper's abstract chunk stays in the literature layer; these add the
+    body: methods, results, discussion, tables. Long sections are split so a
+    chunk stays about the size of an abstract, which is what the embedder and
+    the answer prompt (1400 chars shown per hit) are tuned for.
+    """
+    if not os.path.exists(path):
+        return
+    slice_of = slice_of or {}
+    for line in open(path, encoding="utf-8"):
+        r = json.loads(line)
+        sl = slice_of.get(f"PMID:{r['pmid']}", "pku")
+        for sec in r["sections"]:
+            body = sec["text"]
+            if len(body) < 200:
+                continue
+            head = sec.get("heading") or ""
+            pieces = _split(body)
+            for n, piece in enumerate(pieces, 1):
+                part = f" ({n}/{len(pieces)})" if len(pieces) > 1 else ""
+                yield {
+                    "source": "fulltext",
+                    "citation_id": f"PMID:{r['pmid']}",
+                    "cite_label": f"PMID:{r['pmid']}",
+                    "title": (f"{r['title']} — {head}{part}" if head else f"{r['title']}{part}"),
+                    "text": (f"{head}\n\n{piece}" if head else piece),
+                    "year": str(r.get("year") or "")[:4],
+                    "journal": "",
+                    "url": f"https://europepmc.org/article/PMC/{r['pmcid']}",
+                    "extra": json.dumps({"pmcid": r["pmcid"], "heading": head,
+                                         "part": n, "parts": len(pieces), "slice": sl,
+                                         "paper_title": r["title"]}),
+                }
+
 def market_chunks(path):
     if not os.path.exists(path):
         return
@@ -95,8 +161,19 @@ def market_chunks(path):
 
 def collect():
     chunks = []
-    chunks += list(literature_chunks(os.path.join(RAW, "literature.jsonl")))
+    both = frozenset()
+    ov = os.path.join(RAW, "pterin_overlap_pmids.json")
+    if os.path.exists(ov):
+        both = frozenset(json.load(open(ov))["pmids"])
+    chunks += list(literature_chunks(os.path.join(RAW, "literature.jsonl"), "pku", both))
+    seen = {c["citation_id"] for c in chunks}
+    for c in literature_chunks(os.path.join(RAW, "literature_pterin.jsonl"), "pterin"):
+        if c["citation_id"] not in seen:  # PKU slice wins on duplicates
+            chunks.append(c); seen.add(c["citation_id"])
     chunks += list(guideline_chunks(os.path.join(RAW, "guidelines_fulltext.jsonl")))
+    slice_of = {c["citation_id"]: json.loads(c["extra"]).get("slice", "pku")
+                for c in chunks if c["source"] == "literature"}
+    chunks += list(fulltext_chunks(os.path.join(RAW, "fulltext.jsonl"), slice_of))
     chunks += list(market_chunks(os.path.join(RAW, "market.jsonl")))
     return chunks
 
@@ -105,10 +182,13 @@ def main():
     t0 = time.time()
     chunks = collect()
     n = len(chunks)
-    by_src = {}
+    by_src, by_slice = {}, {}
     for c in chunks:
         by_src[c["source"]] = by_src.get(c["source"], 0) + 1
-    print(f"collected {n} chunks: {by_src}")
+        if c["source"] == "literature":
+            sl = json.loads(c["extra"]).get("slice", "pku")
+            by_slice[sl] = by_slice.get(sl, 0) + 1
+    print(f"collected {n} chunks: {by_src} slices: {by_slice}")
 
     # --- SQLite: chunk text + provenance ---
     db = os.path.join(OUT, "chunks.sqlite")
@@ -142,7 +222,8 @@ def main():
     np.save(os.path.join(OUT, "embeddings.npy"), emb)
     print(f"embeddings: {emb.shape}")
 
-    meta = {"version": "v0", "model": MODEL, "n_chunks": n, "by_source": by_src,
+    meta = {"version": "v0.3", "model": MODEL, "n_chunks": n, "by_source": by_src,
+            "literature_by_slice": by_slice,
             "embedding_dim": int(emb.shape[1]),
             "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "build_seconds": round(time.time() - t0, 1)}

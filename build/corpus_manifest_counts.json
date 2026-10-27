@@ -23,5 +23,87 @@
     "gene_enzyme_therapy": 320,
     "guidelines": 650
   },
-  "frozen_utc": "2026-08-07T12:40:17Z"
+  "frozen_utc": "2026-08-07T12:40:17Z",
+  "refreshes": [
+    {
+      "version": "v0.1",
+      "run_utc": "2026-10-06T13:16:18Z",
+      "since": "2026/08/01",
+      "matched": 45,
+      "already_held": 4,
+      "appended": 38,
+      "supplemental_pmids": [
+        "42561449"
+      ],
+      "literature_records_after": 3739
+    },
+    {
+      "version": "v0.2",
+      "run_utc": "2026-10-06T14:23:41Z",
+      "change": "Layer 1b pterin/monoamine slice added",
+      "chunks_after": 5741
+    }
+  ],
+  "layer1b_pterin": {
+    "frozen_utc": "2026-10-06T14:23:41Z",
+    "date_window": "2000:3000[dp]",
+    "slice_rule": "union of domains NOT core_query",
+    "domains": {
+      "bh4_deficiencies": {
+        "query": "\"tetrahydrobiopterin deficiency\" OR \"tetrahydrobiopterin deficiencies\" OR \"BH4 deficiency\" OR \"BH4 deficiencies\" OR \"biopterin metabolism\" OR \"GTP cyclohydrolase I deficiency\" OR \"GTP cyclohydrolase deficiency\" OR \"6-pyruvoyl-tetrahydropterin synthase\" OR \"6-pyruvoyltetrahydropterin synthase\" OR \"PTPS deficiency\" OR \"dihydropteridine reductase\" OR \"sepiapterin reductase deficiency\" OR \"pterin-4a-carbinolamine dehydratase\" OR primapterinuria OR DNAJC12",
+        "total": 1376,
+        "overlap_with_pku": 509,
+        "in_slice": 491
+      },
+      "dopa_responsive_dystonia": {
+        "query": "\"dopa-responsive dystonia\" OR \"dopa responsive dystonia\" OR \"Segawa disease\" OR \"Segawa syndrome\" OR \"hereditary progressive dystonia\"",
+        "total": 740,
+        "overlap_with_pku": 47,
+        "in_slice": 506
+      },
+      "monoamine_synthesis_disorders": {
+        "query": "\"aromatic L-amino acid decarboxylase deficiency\" OR \"AADC deficiency\" OR \"tyrosine hydroxylase deficiency\" OR \"dopamine beta-hydroxylase deficiency\" OR \"monoamine neurotransmitter disorder\" OR \"monoamine neurotransmitter disorders\" OR \"pediatric neurotransmitter diseases\" OR \"primary neurotransmitter disorders\" OR \"inherited neurotransmitter disorders\"",
+        "total": 521,
+        "overlap_with_pku": 12,
+        "in_slice": 430
+      },
+      "precursor_therapy": {
+        "query": "(\"5-hydroxytryptophan\" OR oxitriptan OR levodopa OR \"L-dopa\" OR carbidopa OR sapropterin OR sepiapterin) AND (\"tetrahydrobiopterin deficiency\" OR \"BH4 deficiency\" OR \"dopa-responsive dystonia\" OR \"AADC deficiency\" OR \"tyrosine hydroxylase deficiency\" OR \"monoamine neurotransmitter disorder\" OR \"monoamine neurotransmitter disorders\" OR \"dihydropteridine reductase\" OR \"6-pyruvoyl-tetrahydropterin synthase\" OR \"sepiapterin reductase\")",
+        "total": 1107,
+        "overlap_with_pku": 245,
+        "in_slice": 584
+      },
+      "five_htp_clinical": {
+        "query": "(\"5-hydroxytryptophan\" OR oxitriptan) AND (depression OR depressive OR anxiety OR insomnia OR sleep OR randomized OR randomised OR placebo OR \"clinical trial\")",
+        "total": 1075,
+        "overlap_with_pku": 8,
+        "in_slice": 415
+      },
+      "bh4_mental_health": {
+        "query": "(tetrahydrobiopterin OR BH4 OR GCH1 OR \"GTP cyclohydrolase\") AND (anxiety OR depression OR depressive OR \"mental health\" OR psychiatric OR insomnia OR sleep OR ADHD OR \"attention deficit\") AND (humans[mh] OR patients OR case)",
+        "total": 365,
+        "overlap_with_pku": 93,
+        "in_slice": 206
+      },
+      "monoamine_biomarkers": {
+        "query": "(\"homovanillic acid\" OR \"5-hydroxyindoleacetic acid\" OR prolactin OR neopterin OR \"urinary pterins\" OR \"CSF neurotransmitter\") AND (tetrahydrobiopterin OR \"monoamine neurotransmitter disorder\" OR \"monoamine neurotransmitter disorders\" OR \"dopa-responsive dystonia\" OR \"AADC deficiency\" OR \"monoamine deficiency\")",
+        "total": 375,
+        "overlap_with_pku": 115,
+        "in_slice": 142
+      },
+      "gch1_vascular_pain_reviews": {
+        "query": "(GCH1 OR \"GTP cyclohydrolase\") AND (\"blood pressure\" OR endothelial OR \"nitric oxide\" OR pain OR hypertension) AND review[pt]",
+        "total": 65,
+        "overlap_with_pku": 7,
+        "in_slice": 50
+      }
+    },
+    "union": {
+      "total": 4149,
+      "slice_count": 2048,
+      "overlap_with_pku": 629
+    },
+    "indexed_with_abstract": 1902,
+    "overlap_tagged_both": 331
+  }
 }

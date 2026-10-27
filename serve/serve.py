@@ -12,9 +12,17 @@ scored.
     ANTHROPIC_API_KEY=sk-...  GUTHRIE_API_TOKEN=...  GUTHRIE_INDEX_DIR=./pku_index  uvicorn serve:app
 
 Endpoints:
-    GET  /health        -> {status, n_chunks, index_version, answer_model}
+    GET  /health        -> {status, n_chunks, index_version, answer_model, answers}
     POST /api/ask       {question}               -> {answer, citations, hits, refused, medical_flag}
-    POST /api/search    {query, k?, source?}     -> [{citation, title, score, url, ...}]
+    POST /api/search    {query, k?, source?, slices?} -> [{citation, title, score, url, ...}]
+    POST /api/paper     {ref, max_chars?}        -> one paper: full text if open access, else abstract
+    GET  /api/concerns  -> [{key, label, papers}] the literature slices (PKU, pterin)
+
+The answer writer is chosen by environment:
+    ANTHROPIC_API_KEY set     -> Anthropic API (GUTHRIE_ANSWER_MODEL); production
+    GUTHRIE_OLLAMA_MODEL set  -> a local model through Ollama (GUTHRIE_OLLAMA_URL)
+    GUTHRIE_ANSWERS=extractive -> no model: one lead sentence per source, cited
+    none of these             -> answer=null with the ranked sources
 
 The answer contract is identical to the skill: cite-or-refuse, medical-advice
 flag + clinician deferral, off-topic refusal. This is the same code path the
@@ -92,6 +100,12 @@ class SearchBody(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     k: int = Field(default=8, ge=1, le=20)
     source: str | None = Field(default=None, max_length=64)
+    slices: list[str] | None = Field(default=None, max_length=8)
+
+
+class PaperBody(BaseModel):
+    ref: str = Field(min_length=1, max_length=200)
+    max_chars: int = Field(default=60000, ge=0, le=400000)
 
 
 def _anthropic_llm(prompt, system, max_tokens):
@@ -106,11 +120,71 @@ def _anthropic_llm(prompt, system, max_tokens):
     return {"text": "".join(b.text for b in msg.content if b.type == "text")}
 
 
+OLLAMA_MODEL = os.environ.get("GUTHRIE_OLLAMA_MODEL", "").strip()
+OLLAMA_URL = os.environ.get("GUTHRIE_OLLAMA_URL", "http://localhost:11434")
+
+
+def _ollama_llm(prompt, system, max_tokens):
+    """The grounding call through a local Ollama model (no key, no network)."""
+    import json as _json
+    import urllib.request
+    body = _json.dumps({"model": OLLAMA_MODEL, "system": system, "prompt": prompt, "stream": False,
+                        "options": {"num_predict": max_tokens}}).encode()
+    req = urllib.request.Request(f"{OLLAMA_URL}/api/generate", data=body,
+                                 headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return {"text": _json.load(r).get("response", "")}
+
+
+def _extractive_llm(prompt, system, max_tokens):
+    """No model at all: one lead sentence per retrieved passage, cited. The
+    passages arrive in the prompt as '[LABEL] (source, year) Title\n<text>'."""
+    import re as _re
+    blocks = prompt.split("CONTEXT (each passage is prefixed with its citation label):", 1)[-1]
+    blocks = blocks.split("\n\nQUESTION:", 1)[0]
+    out, seen = [], set()
+    for block in blocks.split("\n\n---\n\n"):
+        m = _re.match(r"\s*\[([^\]]+)\][^\n]*\n(.*)", block, _re.S)
+        if not m:
+            continue
+        label, text = m.group(1), m.group(2)
+        if label in seen:
+            continue
+        seen.add(label)
+        body = text.split("\n\n", 1)[-1] if "\n\n" in text else text
+        body = _re.sub(r"^(BACKGROUND|INTRODUCTION|OBJECTIVES?|AIMS?|PURPOSE|METHODS?|RESULTS?|CONCLUSIONS?|FINDINGS|DESIGN|SETTING|PARTICIPANTS):\s*", "", body.strip(), flags=_re.I)
+        # prefer a results or conclusion sentence when the abstract is structured
+        rc = _re.search(r"(?:RESULTS?|CONCLUSIONS?|FINDINGS):\s*([^.]{30,}\.)", text, _re.I)
+        sent = rc.group(1) if rc else _re.split(r"(?<=[.!?])\s+", body)[0]
+        if sent:
+            out.append(f"{sent.strip()} [{label}]")
+        if len(out) >= 6:
+            break
+    return {"text": "What the sources report:\n\n" + "\n\n".join(out) if out else ""}
+
+
+def _llm():
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return _anthropic_llm
+    if OLLAMA_MODEL:
+        return _ollama_llm
+    if os.environ.get("GUTHRIE_ANSWERS") == "extractive":
+        return _extractive_llm
+    return None
+
+
+def _answers():
+    llm = _llm()
+    return {_anthropic_llm: "anthropic", _ollama_llm: "ollama",
+            _extractive_llm: "extractive"}.get(llm, "none")
+
+
 @app.get("/health")
 def health():
     info = kernel.guthrie_index_info()
     return {"status": "ok", "n_chunks": info["n_chunks"],
-            "index_version": info["version"], "answer_model": ANSWER_MODEL}
+            "index_version": info["version"], "answer_model": ANSWER_MODEL,
+            "answers": _answers()}
 
 
 @app.post("/api/ask")
@@ -118,17 +192,38 @@ def ask(body: AskBody, _=Depends(rate_limit)):
     # SAME code path as the skill + eval: kernel.pku_ask owns the refusal gate,
     # medical flag, and citation logic. We only inject the grounding LLM.
     r = kernel.pku_ask(body.question, k=ASK_K, mode=ASK_MODE,
-                       min_relevance=kernel.DEFAULT_MIN_RELEVANCE, llm=_anthropic_llm)
-    # trim hit payload for the wire (drop full passage text)
-    r["hits"] = [{"citation": h["citation"], "title": h["title"],
-                  "url": h["url"], "source": h["source"],
-                  "score": h["score"]} for h in r["hits"]]
+                       min_relevance=kernel.DEFAULT_MIN_RELEVANCE, llm=_llm())
+    # Trim the hits for the wire (no passage text), one row per paper. A paper
+    # can come back as its abstract and as full-text sections; the row carries
+    # the paper's own title, not a section's.
+    seen, hits = set(), []
+    for h in r["hits"]:
+        if h["citation"] in seen:
+            continue
+        seen.add(h["citation"])
+        hits.append({"citation": h["citation"], "title": h["paper_title"],
+                     "url": h["url"], "source": h["source"], "year": h["year"],
+                     "slice": h.get("slice") or "", "score": h["score"]})
+    r["hits"] = hits
     return r
 
 
 @app.post("/api/search")
 def search(body: SearchBody, _=Depends(require_token)):
-    hits = kernel.pku_search(body.query, k=body.k, source=body.source)
+    hits = kernel.pku_search(body.query, k=body.k, source=body.source, slices=body.slices)
     return [{"citation": h["citation"], "title": h["title"], "url": h["url"],
              "source": h["source"], "year": h["year"], "score": h["score"]}
             for h in hits]
+
+
+@app.post("/api/paper")
+def paper(body: PaperBody, _=Depends(require_token)):
+    try:
+        return kernel.pku_paper(body.ref, max_chars=body.max_chars)
+    except Exception:  # Europe PMC unreachable
+        raise HTTPException(status_code=502, detail="Paper lookup failed")
+
+
+@app.get("/api/concerns")
+def concerns(_=Depends(require_token)):
+    return kernel.pku_concerns()
