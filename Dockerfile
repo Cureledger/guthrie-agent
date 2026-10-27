@@ -19,8 +19,11 @@ COPY serve/serve.py ./serve.py
 # before the first deploy, or this step 404s. The repo is public, so the
 # download needs no token. Override INDEX_URL to pin a build.
 ARG INDEX_URL=https://github.com/Cureledger/guthrie-agent/releases/download/index-latest/pku_index.tar.gz
-RUN python -c "import urllib.request; urllib.request.urlretrieve('$INDEX_URL', '/tmp/idx.tgz')" \
-    && tar xzf /tmp/idx.tgz -C /app \
+# ADD checks the address on every build, so a new index-latest reaches the
+# image even when Railway's build cache holds every other layer. (A RUN that
+# downloads it would be cached by its unchanged text, keeping the old index.)
+ADD $INDEX_URL /tmp/idx.tgz
+RUN tar xzf /tmp/idx.tgz -C /app \
     && rm /tmp/idx.tgz \
     && test -f /app/pku_index/chunks.sqlite \
     && test -f /app/pku_index/embeddings.npy \
