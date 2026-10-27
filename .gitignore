@@ -1,15 +1,18 @@
-node_modules/
-dist/
-*.tsbuildinfo
-.env
-.env.local
-.env*.local
-*.env
-.eliza/
-.bun/
-bun.lockb
-*.log
-.DS_Store
-data/
-*.db
-*.sqlite
+# build/ holds the SCRIPTS the index job runs (fetch_corpus.py, build_index.py,
+# ...), so it is tracked; only the corpus it generates is ignored.
+
+# large binaries — regenerable or artifact-backed, not for git
+*.tar.gz
+build/raw/
+pku_index/*.npy
+pku_index/*.pkl
+pku_index/*.sqlite
+__pycache__/
+*.pyc
+.venv/
+operator/output/
+operator/ledger.jsonl
+operator/HALT
+
+# the index job checks the PKU Commons documents out here
+/pku-commons/
