@@ -72,5 +72,11 @@ N. Each *Build PKU index* run:
 So to **grow it in chunks**, just re-run the workflow — each run adds another
 `max_records` and prints `remaining` until the universe (~9.7k records) is
 covered. Set **`max_records = 0`** to fetch everything remaining in one run. The
-weekly schedule keeps adding/refreshing on its own. After any run, redeploy on
-Railway so the image pulls the new `index-latest` asset.
+weekly schedule keeps adding/refreshing on its own. After any run, rebuild on
+Railway so the image pulls the new `index-latest` asset:
+`railway redeploy --from-source --service guthrie-agent`. A plain redeploy
+reuses the image already built, with the old index.
+
+When `build/fetch_corpus.py` changes how it reads a paper, bump its
+`PARSE_VERSION`: the next run reads every older record again, so the fix
+reaches the whole corpus and not only papers added afterwards.

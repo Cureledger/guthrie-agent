@@ -19,6 +19,10 @@ import argparse, json, os, sys, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+# Bump when _parse_article changes what it reads: records parsed by an older
+# version are fetched again on the next run, so the fix reaches the whole
+# accumulated corpus, not only new papers. 2 = whole titles (itertext).
+PARSE_VERSION = 2
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, "raw")
 
@@ -67,8 +71,13 @@ def esearch(query, since=None, retmax=100000):
     return data.get("idlist", []), int(data.get("count", 0))
 
 def _text(el, path):
+    # All the text inside the element, not just .text: PubMed marks gene and
+    # chemical names up, so "Screening of <i>PAH</i> gene mutations ..." would
+    # otherwise end at "Screening of".
     node = el.find(path)
-    return node.text.strip() if node is not None and node.text else None
+    if node is None:
+        return None
+    return " ".join("".join(node.itertext()).split()) or None
 
 def _parse_article(art):
     medline = art.find("MedlineCitation")
@@ -105,7 +114,7 @@ def _parse_article(art):
             pmcid = aid.text
     return {"pmid": pmid, "title": title, "abstract": abstract, "journal": journal,
             "year": year, "authors": authors, "pub_types": pub_types, "mesh": mesh,
-            "doi": doi, "pmcid": pmcid}
+            "doi": doi, "pmcid": pmcid, "parse_version": PARSE_VERSION}
 
 def efetch_batch(pmids):
     xml = _get("efetch.fcgi", {"id": ",".join(pmids), "retmode": "xml"})
@@ -172,6 +181,22 @@ def main():
     have = {} if args.reset else _load_corpus(args.out)
     attempted = set() if args.reset else _load_ids(ids_path)
 
+    # Records an older parser read are fetched again; one that no longer comes
+    # back keeps its old record and is retried next run.
+    stale = sorted((p for p, r in have.items() if r.get("parse_version") != PARSE_VERSION),
+                   key=_sort_key)
+    refreshed = 0
+    for i in range(0, len(stale), args.batch):
+        chunk = stale[i:i + args.batch]
+        for r in efetch_batch(chunk):
+            pmid = str(r.get("pmid") or "").strip()
+            if pmid in have:
+                have[pmid] = r
+                refreshed += 1
+        print(f"  re-read {min(i + args.batch, len(stale)):>6}/{len(stale)} older records "
+              f"-> {refreshed:,} refreshed", flush=True)
+        time.sleep(0.34)  # NCBI ~3 req/s without a key
+
     universe, total = esearch(CORE_QUERY, since=args.since, retmax=100000)
     universe = [str(x) for x in universe]
     todo = [i for i in universe if i not in attempted]
@@ -206,7 +231,8 @@ def main():
     tail = (" Corpus is COMPLETE for this universe."
             if remaining == 0 else
             f" Re-run to fetch the next {min(args.max or remaining, remaining):,}.")
-    print(f"DONE: corpus {len(have):,} records (+{added:,} this run); "
+    print(f"DONE: corpus {len(have):,} records (+{added:,} this run, "
+          f"{refreshed:,} re-read); "
           f"universe {total:,}, attempted {len(attempted):,}, remaining {remaining:,}.{tail}")
 
 if __name__ == "__main__":
