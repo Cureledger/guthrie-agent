@@ -13,7 +13,7 @@ Turnstile, and it refuses any request without the secret.
 The ~40MB index (`chunks.sqlite`, `embeddings.npy`, `bm25.pkl`) is git-ignored.
 It is rebuilt from public sources (PubMed E-utilities — no API key) by
 **`.github/workflows/build-index.yml`** and published as the **`index-latest`**
-GitHub Release asset. `serve/Dockerfile` downloads that asset at build time.
+GitHub Release asset. The `Dockerfile` downloads that asset at build time.
 The repo is public, so the download needs no token. The code being public
 does not open the service: every question still needs `GUTHRIE_API_TOKEN`.
 
@@ -28,8 +28,12 @@ refresh on a schedule (weekly + on-demand) with no maintainer.
    Docker build's download step fails by design.)
 
 2. **Create the Railway service** from this repo:
-   - Root Directory: empty (the repo root)
-   - Builder: Dockerfile (`railway.toml` sets `dockerfilePath = serve/Dockerfile`)
+   - Root Directory: empty (the repo root). Railway finds `Dockerfile` there
+     and builds it; nothing else selects the builder. New Railway services
+     ignore `railway.toml`, so the repo has none.
+   - Settings → Deploy: Healthcheck Path `/health`, Healthcheck Timeout
+     `300` (the first start loads the index and the MiniLM weights), Restart
+     Policy "On failure".
    - Variable: `ANTHROPIC_API_KEY` = a funded key on a workspace with model
      access. (A key authenticates to its owning workspace — check the
      `anthropic-workspace-id` response header if calls 401/403.)

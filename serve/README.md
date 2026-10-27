@@ -21,7 +21,7 @@ curl -s localhost:8000/api/ask -H 'content-type: application/json' \
 
 ## Deploy
 
-Railway builds `serve/Dockerfile` from the repo root; see [`../DEPLOY.md`](../DEPLOY.md).
+Railway builds the `Dockerfile` at the repo root; see [`../DEPLOY.md`](../DEPLOY.md).
 The image bakes in `kernel.py`, the index and the MiniLM weights, so the
 container is self-contained and starts offline.
 

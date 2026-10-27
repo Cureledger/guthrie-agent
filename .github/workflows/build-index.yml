@@ -2,7 +2,7 @@ name: Build PKU index
 
 # Rebuilds the Guthrie research index from public sources (PubMed E-utilities —
 # NO API key required) and publishes it as the `index-latest` GitHub Release
-# asset. The agent's Docker image (serve/Dockerfile) downloads that asset at
+# asset. The agent's Docker image (Dockerfile) downloads that asset at
 # build time, so the ~40MB binaries never live in git.
 #
 # Run this ONCE (Run workflow) before the first Railway deploy, then it refreshes
