@@ -7,8 +7,6 @@
 #   ANTHROPIC_API_KEY   — funded key on a workspace with model access (runtime)
 #   GUTHRIE_API_TOKEN   — the secret the Phebe API sends; without it every
 #                         /api/* request is refused
-#   INDEX_READ_TOKEN    — may only read this repo's contents; the build uses
-#                         it to download the index (see DEPLOY.md)
 # Optional:
 #   GUTHRIE_ANSWER_MODEL      (default claude-haiku-4-5-20251001)
 #   GUTHRIE_RATE_LIMIT_PER_MIN(default 60, all members together)

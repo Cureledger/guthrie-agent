@@ -46,4 +46,4 @@ The page sends the member's question to the Phebe API, which checks the session,
 applies the member's own limit, and calls `/api/ask` server-side with the
 secret. The member never sees this service's address. `refused` and
 `medical_flag` let the page show the right note (rephrase, or talk to your
-clinic); the page lists sources as text, without links.
+clinic); the page lists the sources, each linked to the paper on PubMed.
