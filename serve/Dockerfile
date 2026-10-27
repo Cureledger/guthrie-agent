@@ -13,16 +13,12 @@ COPY serve/serve.py ./serve.py
 # in git. It is rebuilt from public sources by .github/workflows/build-index.yml
 # and published as the `index-latest` GitHub Release asset; pull it in at build
 # time. Run that workflow ONCE (Actions -> "Build PKU index" -> Run workflow)
-# before the first deploy, or this step fails.
-#
-# This repo is private, so the download needs INDEX_READ_TOKEN: a token that
-# may only read this repo's contents. Railway hands a service Variable to the
-# build when the Dockerfile declares it as an ARG.
-ARG INDEX_READ_TOKEN
-COPY serve/fetch_index.py /tmp/fetch_index.py
-RUN python /tmp/fetch_index.py /tmp/idx.tgz \
+# before the first deploy, or this step 404s. The repo is public, so the
+# download needs no token. Override INDEX_URL to pin a build.
+ARG INDEX_URL=https://github.com/Cureledger/guthrie-agent/releases/download/index-latest/pku_index.tar.gz
+RUN python -c "import urllib.request; urllib.request.urlretrieve('$INDEX_URL', '/tmp/idx.tgz')" \
     && tar xzf /tmp/idx.tgz -C /app \
-    && rm /tmp/idx.tgz /tmp/fetch_index.py \
+    && rm /tmp/idx.tgz \
     && test -f /app/pku_index/chunks.sqlite \
     && test -f /app/pku_index/embeddings.npy \
     && test -f /app/pku_index/bm25.pkl \
