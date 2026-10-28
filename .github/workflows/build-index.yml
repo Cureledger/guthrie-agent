@@ -128,7 +128,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ASSETS="pku_index.tar.gz $(ls build/raw/*.jsonl.gz) build/raw/fetched_ids.txt build/raw/fetched_ids_pterin.txt build/raw/fulltext_ids.txt build/raw/fulltext_failed.txt"
+          ASSETS="pku_index.tar.gz"
+          # GitHub refuses an empty file ("Bad Content-Length"), and an empty
+          # id log has nothing to keep: a run where Europe PMC answered nothing
+          # leaves fulltext_ids.txt empty.
+          for f in build/raw/*.jsonl.gz build/raw/fetched_ids.txt build/raw/fetched_ids_pterin.txt build/raw/fulltext_ids.txt build/raw/fulltext_failed.txt; do
+            if [ -s "$f" ]; then ASSETS="$ASSETS $f"; fi
+          done
           NOTES="PKU retrieval index + accumulated corpus, rebuilt $(date -u +%Y-%m-%dT%H:%M:%SZ) from PubMed, Europe PMC full text and guidelines. Docker pulls pku_index.tar.gz; the Build-PKU-index Action reuses the corpus files and id logs to grow the corpus each run."
           if gh release view index-latest >/dev/null 2>&1; then
             gh release upload index-latest $ASSETS --clobber
