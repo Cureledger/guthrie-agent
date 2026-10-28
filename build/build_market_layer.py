@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guthrie corpus — the 'market' layer.
 
-Chunks the PKU Commons + Phebe documents (see CORPUS.md Layer 2) into
+Chunks the public PKU Commons documents (see CORPUS.md Layer 2) into
 section-level records with a [Commons:<doc>] citation id each. Output:
 build/raw/market.jsonl
 """
@@ -11,10 +11,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, "raw")
 # The Commons documents live in the pku-commons repo. The index job checks it
 # out and says where in PKU_COMMONS_DIR; left unset, it is the folder next to
-# this repo. phebe is a sibling of pku-commons.
+# this repo.
 COMMONS = os.path.abspath(
     os.environ.get("PKU_COMMONS_DIR") or os.path.join(HERE, "..", "..", "pku-commons"))
-CURELEDGER = os.path.abspath(os.path.join(COMMONS, ".."))
 
 # (citation_id, absolute path, human title, url-or-path for provenance)
 SOURCES = [
@@ -23,10 +22,10 @@ SOURCES = [
     ("peer-review",  os.path.join(COMMONS, "docs/PEER-REVIEW.md"),     "PKU Commons Peer-Review Model", "pku-commons/docs/PEER-REVIEW.md"),
     ("pain-points",  os.path.join(COMMONS, "docs/pain-points.md"),     "TruPKU Pain Points", "pku-commons/docs/pain-points.md"),
     ("readme",       os.path.join(COMMONS, "README.md"),               "PKU Commons README", "pku-commons/README.md"),
-    ("phebe-spec",   os.path.join(CURELEDGER, "phebe/APP-SPEC.md"),    "Phebe App Spec", "phebe/APP-SPEC.md"),
-    ("phebe-thesis", os.path.join(CURELEDGER, "phebe/Phebe_Strategic_Thesis.md"), "Phebe Strategic Thesis", "phebe/Phebe_Strategic_Thesis.md"),
-    ("scale-spec",   os.path.join(CURELEDGER, "phebe/PROMO-SCALE-SPEC.md"), "Phebe Scale Spec", "phebe/PROMO-SCALE-SPEC.md"),
-    ("scale-handoff",os.path.join(CURELEDGER, "phebe/BODY-SCALE-HANDOFF.md"), "Phebe Body-Scale Handoff", "phebe/BODY-SCALE-HANDOFF.md"),
+    # Only documents that are public in the pku-commons repository belong here.
+    # Internal Phebe documents (app spec, strategic thesis, scale specs) were
+    # listed until 2026-10-11 and are removed: the corpus is research plus the
+    # public Commons infrastructure, never company material.
 ]
 
 def chunk_markdown(text, min_chars=200):

@@ -10,8 +10,10 @@ Turnstile, and it refuses any request without the secret.
 
 ## The index is built in CI, not committed
 
-The ~40MB index (`chunks.sqlite`, `embeddings.npy`, `bm25.pkl`) is git-ignored.
-It is rebuilt from public sources (PubMed E-utilities — no API key) by
+The index (`chunks.sqlite`, `embeddings.npy`, `bm25.pkl`; 269 MB, 117 MB
+packed) is git-ignored.
+It is rebuilt from public sources (PubMed E-utilities and Europe PMC — no
+API key) by
 **`.github/workflows/build-index.yml`** and published as the **`index-latest`**
 GitHub Release asset. The `Dockerfile` downloads that asset at build time.
 The repo is public, so the download needs no token. The code being public
@@ -41,7 +43,8 @@ refresh on a schedule (weekly + on-demand) with no maintainer.
      holds the same value (Worker secret `GUTHRIE_API_TOKEN`); set both at once.
 
 3. **Deploy.** Railway builds the image (pulling `index-latest`), starts
-   uvicorn on `$PORT`, and health-checks `GET /health`.
+   uvicorn on `$PORT`, and health-checks `GET /health`. The service holds the
+   whole index in memory: about 1.5 GB resident with full text.
 
 4. **Verify:** `GET https://<service>.up.railway.app/health` →
    `{status, n_chunks, index_version, answer_model}`. `POST /api/ask` without
@@ -62,12 +65,19 @@ refresh on a schedule (weekly + on-demand) with no maintainer.
 The corpus **accumulates** across runs — it does not re-snapshot the most-recent
 N. Each *Build PKU index* run:
 
-1. downloads the corpus grown so far (`literature.jsonl.gz` + `fetched_ids.txt`
-   from the `index-latest` release),
+1. downloads the corpus grown so far (the literature, pterin and full-text
+   files with their id logs, from the `index-latest` release),
 2. fetches up to **`max_records`** *new* PubMed records not yet attempted
    (deduped by PMID; `fetched_ids.txt` tracks every attempted id so abstract-less
    records don't stall progress),
 3. rebuilds the index and republishes both the index and the grown corpus.
+
+Full text works the same way. `build/fetch_fulltext.py` asks Europe PMC
+about every paper not yet checked and keeps the open-access ones;
+`fulltext_ids.txt` records what was checked, `fulltext_failed.txt` the papers
+with no XML (rechecked with `--retry-failed`). The first run checks all
+~8,000 papers, about an hour; later runs check only new ones. A batch that
+Europe PMC refuses (HTTP 503) is not marked checked, so the next run takes it.
 
 So to **grow it in chunks**, just re-run the workflow — each run adds another
 `max_records` and prints `remaining` until the universe (~9.7k records) is

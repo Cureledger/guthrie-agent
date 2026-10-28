@@ -44,10 +44,13 @@ outputs](https://github.com/Cureledger/pku-commons/blob/main/docs/PEER-REVIEW.md
 # 1. environment
 python -m venv .venv && ./.venv/bin/pip install rank_bm25 sentence-transformers numpy
 
-# 2. build the brain from source (a few minutes, no API key)
+# 2. build the brain from source (about an hour the first time, no API key)
 python build/fetch_corpus.py                 # PubMed abstracts + metadata
+python build/fetch_corpus.py --slice pterin  # Layer 1b: BH4 and monoamine disorders
+python build/fetch_corpus.py --pmids build/supplemental_pmids.txt
+python build/fetch_fulltext.py               # Europe PMC full text, every open-access paper
 python build/fetch_guidelines_fulltext.py    # PMC open-access guideline full text
-python build/build_market_layer.py           # PKU Commons + Phebe docs
+python build/build_market_layer.py           # public PKU Commons docs
 python build/build_index.py                  # BM25 + MiniLM hybrid index -> pku_index/
 
 # 3. use it (in a Claude Science session, the skill loads kernel.py for you)
@@ -56,21 +59,27 @@ python -c "import kernel; print(kernel.pku_ask('How does pegvaliase lower blood 
 
 ## The numbers
 
-- **Corpus:** ~3,700 PubMed abstracts (1998–2026) + 26 guideline full-text
-  sections + 74 PKU Commons / Phebe chunks = **3,800 indexed chunks**. The whole
-  PKU literature is only ~9.7k records, so this is a complete-enough slice that
-  fits in one local index (~10 MB) and builds in ~35 s on CPU.
+- **Corpus (27 Oct 2026):** 6,091 PKU papers and 1,910 on the pterin (BH4) and
+  monoamine-synthesis disorders, every one with its abstract; the full text of
+  the 1,564 that have an open-access copy, section by section; 18 guideline
+  full-text sections; 27 PKU Commons chunks. **53,364 indexed chunks**, 269 MB
+  on disk (117 MB packed), built in about 7 minutes on a laptop CPU.
+- **Memory:** the service holds the whole index in memory, about 1.5 GB
+  resident (the abstracts-only index used about 650 MB).
 - **Eval:** 85% citation recall (conservative), **100% groundedness — zero
-  fabricated citations**, 100% correct medical + out-of-scope refusal. See
-  [`eval/report.md`](eval/report.md).
+  fabricated citations**, 100% correct medical + out-of-scope refusal on the
+  v0 index with a model. See [`eval/report.md`](eval/report.md), and
+  [`eval/EVAL.md`](eval/EVAL.md) for the retrieval-only check of this index.
 
 ## Staying live without a maintainer
 
 ```bash
-# incremental refresh: pull only records added since a date, rebuild the index
-python build/fetch_corpus.py --since 2026/01/01 && python build/build_index.py
+# refresh: fetch papers not yet attempted, check them for full text, rebuild
+python build/fetch_corpus.py && python build/fetch_corpus.py --slice pterin
+python build/fetch_fulltext.py && python build/build_index.py
 python eval/run_eval.py   # confirm the score held (regression gate)
 ```
 
-Because the corpus is small and the build is one command, keeping Guthrie
-current is a cron job, not a project. Anyone in the community can run it.
+The *Build PKU index* workflow runs this every Monday: it adds new papers,
+checks them for full text and rebuilds the index. Anyone in the community can
+run the same commands.
