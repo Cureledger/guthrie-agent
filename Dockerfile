@@ -1,7 +1,7 @@
 # Railway builds this file because it is named Dockerfile at the repo root.
 # Railway services created since its Config as Code deprecation do not read
 # railway.toml, so there is none; the build context is the repo root.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
