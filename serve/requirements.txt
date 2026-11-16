@@ -3,5 +3,5 @@ uvicorn[standard]>=0.54.0
 pydantic>=2.14.2
 anthropic>=2.3.0
 rank_bm25>=0.2.2
-sentence-transformers>=6.2.0
+sentence-transformers>=6.3.0
 numpy>=2.5.4
