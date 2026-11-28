@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Cureledger/guthrie",
+  "title": "Guthrie, the PKU research agent",
+  "description": "Search the open PKU (phenylketonuria) literature: passages with PMIDs, full-text papers.",
+  "websiteUrl": "https://phebe.life",
+  "repository": {
+    "url": "https://github.com/Cureledger/guthrie-agent",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://guthrie-agent-production.up.railway.app/mcp"
+    }
+  ]
+}

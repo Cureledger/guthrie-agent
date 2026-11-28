@@ -1,0 +1,15 @@
+{
+  "name": "guthrie-agent",
+  "description": "Guthrie, the PKU research agent: retrieval over the open phenylketonuria literature, every passage with a PMID.",
+  "owner": { "name": "Cureledger" },
+  "plugins": [
+    {
+      "name": "guthrie",
+      "source": "./plugins/guthrie",
+      "description": "Search the PKU literature and read papers through Guthrie's hosted MCP server; cite or refuse; no medical advice.",
+      "version": "1.0.0",
+      "category": "research",
+      "tags": ["pku", "phenylketonuria", "rare-disease", "pubmed", "retrieval"]
+    }
+  ]
+}

@@ -2,7 +2,9 @@
 
 A small FastAPI wrapper around the `guthrie` skill's retrieval brain
 (`../kernel.py`). Same cite-or-refuse contract, same code path the eval scored.
-Its one caller is the Phebe API, on behalf of signed-in Phebe members.
+Two kinds of caller: the Phebe API, on behalf of signed-in Phebe members, which
+asks for written answers; and any other agent, which gets the retrieval (ranked
+passages with PMIDs, papers, corpus slices) over plain HTTP or MCP, no key.
 
 ## Run locally
 
@@ -27,17 +29,41 @@ container is self-contained and starts offline.
 
 ## Endpoints
 
-Every `/api/*` request needs `Authorization: Bearer $GUTHRIE_API_TOKEN`.
-
-| method | path | body | returns |
-|---|---|---|---|
-| GET | `/health` | — | `{status, n_chunks, index_version, answer_model}` |
-| POST | `/api/ask` | `{question}` | `{answer, citations, hits, refused, medical_flag}` |
-| POST | `/api/search` | `{query, k?, source?}` | `[{citation, title, url, source, year, score}]` |
+| method | path | auth | body | returns |
+|---|---|---|---|---|
+| GET | `/` | open | — | what this is, with links |
+| GET | `/llms.txt` | open | — | the same, for crawlers |
+| GET | `/health` | open | — | `{status, n_chunks, index_version, answer_model, answers}` |
+| GET | `/openapi.json` | open | — | the spec; `/docs` renders it |
+| POST | `/api/ask` | `Authorization: Bearer $GUTHRIE_API_TOKEN` | `{question}` | `{answer, citations, hits, refused, medical_flag}` |
+| POST | `/api/search` | open | `{query, k?, source?, slices?}` | `[{citation, title, url, source, year, score}]` |
+| POST | `/api/paper` | open | `{ref, max_chars?}` | one paper: `{pmid, pmcid, doi, title, year, journal, abstract, sections, full_text, url, citation}` |
+| GET | `/api/concerns` | open | — | `[{key, label, papers}]` |
+| POST | `/mcp` | open | MCP streamable HTTP | tools `pku_search`, `pku_paper`, `pku_concerns`, `guthrie_index_info` |
 
 `/api/ask` always reads 8 passages and gives a brief answer, with the kernel's
-own relevance floor. `source` filter for search: `literature` /
-`guideline_fulltext` / `commons`.
+own relevance floor. It is the only route that calls a language model, so it is
+the only one behind the token. `source` filter for search: `literature` /
+`fulltext` / `guideline_fulltext` / `commons`; `slices` takes keys from
+`/api/concerns` (`pku`, `pterin`).
+
+The open routes share one rate limit (`GUTHRIE_PUBLIC_RATE_LIMIT_PER_MIN`,
+default 240 a minute across all callers), separate from the members' answer
+allowance, so a crawler cannot starve the Phebe chat.
+
+## MCP
+
+The same retrieval is an MCP server on the same process, streamable HTTP,
+stateless, JSON responses, no auth, at `/mcp`. Add it to any MCP client as a
+remote server. The tool descriptions carry the contract (cite by PMID, no
+medical advice). `../server.json` is the listing for the MCP registry and
+`../plugins/guthrie/` the Claude Code plugin that installs it.
+
+```bash
+curl -s localhost:8000/mcp -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pku_search","arguments":{"query":"sapropterin responsiveness","k":3}}}'
+```
 
 ## How Phebe calls it
 

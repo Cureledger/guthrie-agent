@@ -2,11 +2,15 @@
 
 The FastAPI service (`serve/serve.py`) answers PKU questions with cite-or-refuse
 grounding over a hybrid BM25 + MiniLM index. It lives in this repo and is
-deployed on **Railway** (Docker). Only Phebe members can ask: the chat page is
-app.phebe.life/guthrie, the Phebe API checks the member's session and limits
-each member, and then calls `/api/ask` with a shared secret
-(`GUTHRIE_API_TOKEN`). No browser calls this service, so it has no CORS and no
-Turnstile, and it refuses any request without the secret.
+deployed on **Railway** (Docker) at `https://guthrie-agent-production.up.railway.app`.
+
+Two kinds of caller. Only Phebe members can ask for a written answer: the chat
+page is app.phebe.life/guthrie, the Phebe API checks the member's session and
+limits each member, and then calls `/api/ask` with a shared secret
+(`GUTHRIE_API_TOKEN`). The retrieval routes (`/api/search`, `/api/paper`,
+`/api/concerns`) and the MCP server at `/mcp` make no model call and are open
+to any agent, no key, under their own rate limit. The OpenAPI spec is at
+`/openapi.json` and `/llms.txt` describes the service for crawlers.
 
 ## The index is built in CI, not committed
 
@@ -59,6 +63,35 @@ refresh on a schedule (weekly + on-demand) with no maintainer.
 | `GUTHRIE_ANSWER_MODEL` | `claude-haiku-4-5-20251001` | Answer model (use a **live** id; dated snapshots get retired → 404) |
 | `GUTHRIE_API_TOKEN` | — (required) | `/api/*` requires `Authorization: Bearer <token>`. Unset = every `/api/*` request is refused (503). The Phebe API sends it |
 | `GUTHRIE_RATE_LIMIT_PER_MIN` | `60` | Answers per minute across all members, counted only after the secret checks out. A backstop if the secret leaks; each member's own limit is in the Phebe API |
+| `GUTHRIE_PUBLIC_RATE_LIMIT_PER_MIN` | `240` | Retrieval requests per minute across all open callers (HTTP and MCP together). Separate counter from the members' answers |
+| `GUTHRIE_PUBLIC_URL` | `https://guthrie-agent-production.up.railway.app` | The public origin, printed in `/`, `/llms.txt` and the spec |
+
+## Being found by other agents
+
+The service is only useful to other agents if they can find it. After a deploy
+that carries the open routes and `/mcp`:
+
+1. **MCP registry.** `server.json` at the repo root is the listing
+   (`io.github.Cureledger/guthrie`, remote `streamable-http`). Publish it with
+   the registry's `mcp-publisher` CLI (binaries on the
+   [registry releases page](https://github.com/modelcontextprotocol/registry/releases),
+   or Homebrew), from the repo root:
+   `mcp-publisher login github` (a GitHub account in the Cureledger
+   organization; the `io.github.<org>` namespace is verified against GitHub),
+   `mcp-publisher validate`, then `mcp-publisher publish`. Bump `version` in
+   `server.json` on each republish.
+2. **Claude Code plugin.** `.claude-plugin/marketplace.json` makes this repo a
+   marketplace and `plugins/guthrie/` the plugin (skill + `.mcp.json` pointing
+   at `/mcp`). Nothing to publish: users run
+   `claude plugin marketplace add Cureledger/guthrie-agent` then
+   `claude plugin install guthrie@guthrie-agent`. Check with
+   `claude plugin validate ./plugins/guthrie` before tagging.
+3. **GitHub.** Give the repo topics (`phenylketonuria`, `pku`, `rare-disease`,
+   `mcp`, `mcp-server`, `claude-skill`, `pubmed`, `retrieval`), a homepage
+   (`https://phebe.life`) and a license file; an unlicensed repo is one most
+   assistants will not recommend.
+4. **The sites.** `phebe.life/llms.txt` and `cureledger.com/llms.txt` should
+   link `/mcp` and the repo; `pku-commons.org` has no `llms.txt` yet.
 
 ## Growing / refreshing the corpus
 
