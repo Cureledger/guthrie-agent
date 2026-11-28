@@ -35,8 +35,32 @@ outputs](https://github.com/Cureledger/pku-commons/blob/main/docs/PEER-REVIEW.md
 | [`build/`](build/) | reproducible fetch + index scripts (one command rebuilds) |
 | [`eval/`](eval/) | the retrieval eval set + scored report (the scientific-review layer) |
 | [`MIGRATION.md`](MIGRATION.md) | how this supersedes the ElizaOS Guthrie |
-| [`serve/`](serve/) | the HTTP service Phebe calls; deploy notes in [`DEPLOY.md`](DEPLOY.md) |
+| [`serve/`](serve/) | the hosted service: open retrieval routes and MCP server for any agent, the cited-answer route for Phebe members; deploy notes in [`DEPLOY.md`](DEPLOY.md) |
+| [`plugins/guthrie/`](plugins/guthrie/) | the Claude Code plugin: the skill plus the hosted MCP server, installed from this repo as a marketplace |
+| [`server.json`](server.json) | the MCP registry listing for the hosted server |
 | `pku_index/` | the built index (or unpack `pku_index_v0.tar.gz` here) |
+
+## Use Guthrie from your agent
+
+Guthrie runs as a public service at `https://guthrie-agent-production.up.railway.app`.
+Other agents have their own language model; what they need from Guthrie is his
+retrieval, and that is open to everyone, no key:
+
+| How | Where |
+|---|---|
+| MCP server (streamable HTTP, no auth) | `https://guthrie-agent-production.up.railway.app/mcp`, tools `pku_search`, `pku_paper`, `pku_concerns`, `guthrie_index_info` |
+| Plain HTTP | `POST /api/search`, `POST /api/paper`, `GET /api/concerns`; spec at `/openapi.json`, rendered at `/docs` |
+| Claude Code | `claude plugin marketplace add Cureledger/guthrie-agent` then `claude plugin install guthrie@guthrie-agent` |
+| Any MCP client | add the `/mcp` URL as a remote server; `server.json` is the registry listing |
+| Crawlers | `/llms.txt` |
+
+Every hit carries a PMID and a PubMed url: cite it. Guthrie reports what the
+literature says; he does not give medical advice, diagnosis, or dosing for an
+individual, and neither should an answer built on him.
+
+`POST /api/ask`, the route that writes a grounded, cited answer with a language
+model, costs money per call and stays reserved for Phebe members through the
+Phebe API (bearer token).
 
 ## Quick start
 
